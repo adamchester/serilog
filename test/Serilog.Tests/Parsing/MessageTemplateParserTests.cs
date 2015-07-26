@@ -50,6 +50,13 @@ namespace Serilog.Tests.Parsing
         }
 
         [Test]
+        public void DoubledLeftBracketsAreParsedAsASingleBracketInsidePropertyAsText()
+        {
+            AssertParsedAs("Well, {hi{{Hi!}",
+                new TextToken("Well, {hi{Hi!}"));
+        }
+
+        [Test]
         public void DoubledLeftBracketsAreParsedAsASingleBracketInsideText()
         {
             AssertParsedAs("Well, {{ Hi!",
