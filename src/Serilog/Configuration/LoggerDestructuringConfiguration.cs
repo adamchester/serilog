@@ -13,6 +13,7 @@
 // limitations under the License.
 
 using System;
+using System.Reflection;
 using Serilog.Core;
 using Serilog.Policies;
 
@@ -27,17 +28,21 @@ namespace Serilog.Configuration
         readonly Action<Type> _addScalar;
         readonly Action<IDestructuringPolicy> _addPolicy;
         readonly Action<int> _setMaximumDepth;
+        readonly Action<bool> _setTreatReflectionTypesAsScalar;
 
         internal LoggerDestructuringConfiguration(
             LoggerConfiguration loggerConfiguration,
+            Action<bool> setTreatReflectionTypesAsScalar,
             Action<Type> addScalar,
             Action<IDestructuringPolicy> addPolicy,
             Action<int> setMaximumDepth)
         {
             if (loggerConfiguration == null) throw new ArgumentNullException(nameof(loggerConfiguration));
+            if (setTreatReflectionTypesAsScalar == null) throw new ArgumentNullException(nameof(setTreatReflectionTypesAsScalar));
             if (addScalar == null) throw new ArgumentNullException(nameof(addScalar));
             if (addPolicy == null) throw new ArgumentNullException(nameof(addPolicy));
             _loggerConfiguration = loggerConfiguration;
+            _setTreatReflectionTypesAsScalar = setTreatReflectionTypesAsScalar;
             _addScalar = addScalar;
             _addPolicy = addPolicy;
             _setMaximumDepth = setMaximumDepth;
@@ -65,6 +70,12 @@ namespace Serilog.Configuration
         public LoggerConfiguration AsScalar<TScalar>()
         {
             return AsScalar(typeof(TScalar));
+        }
+
+        public LoggerConfiguration WithoutTreatingReflectionTypesAsScalars()
+        {
+            _setTreatReflectionTypesAsScalar(false);
+            return _loggerConfiguration;
         }
 
         /// <summary>
@@ -110,6 +121,24 @@ namespace Serilog.Configuration
             if (transformation == null) throw new ArgumentNullException(nameof(transformation));
             var policy = new ProjectedDestructuringPolicy(t => t == typeof(TValue),
                                                           o => transformation((TValue)o));
+            return With(policy);
+        }
+
+        /// <summary>
+        /// When destructuring objects, transform instances of the specified type with
+        /// the provided function.
+        /// </summary>
+        /// <param name="transformation">Function mapping instances of <typeparamref name="TValue"/>
+        /// to an alternative representation.</param>
+        /// <typeparam name="TValue">Type of values to transform.</typeparam>
+        /// <returns>Configuration object allowing method chaining.</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public LoggerConfiguration ByTransformingAssignableFrom<TValue>(Func<TValue, object> transformation)
+        {
+            if (transformation == null) throw new ArgumentNullException(nameof(transformation));
+            var policy = new ProjectedDestructuringPolicy(
+                t => typeof(TValue).GetTypeInfo().IsAssignableFrom(t.GetTypeInfo()),
+                o => transformation((TValue)o));
             return With(policy);
         }
 

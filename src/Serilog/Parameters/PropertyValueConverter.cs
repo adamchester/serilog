@@ -46,30 +46,52 @@ namespace Serilog.Parameters
         readonly IDestructuringPolicy[] _destructuringPolicies;
         readonly IScalarConversionPolicy[] _scalarConversionPolicies;
         readonly int _maximumDestructuringDepth;
-
-        public PropertyValueConverter(int maximumDestructuringDepth, IEnumerable<Type> additionalScalarTypes, IEnumerable<IDestructuringPolicy> additionalDestructuringPolicies)
+        
+        internal static IScalarConversionPolicy[] GetDefaultScalarConversionPolicies(
+            IEnumerable<Type> additionalScalarTypes, bool treatReflectionTypesAsScalar = true)
         {
             if (additionalScalarTypes == null) throw new ArgumentNullException(nameof(additionalScalarTypes));
+            
+            return treatReflectionTypesAsScalar
+                ? new IScalarConversionPolicy[]
+                {
+                    new SimpleScalarConversionPolicy(BuiltInScalarTypes.Concat(additionalScalarTypes)),
+                    new NullableScalarConversionPolicy(),
+                    new EnumScalarConversionPolicy(),
+                    new ByteArrayScalarConversionPolicy(),
+                    new ReflectionTypesScalarConversionPolicy()
+                }
+                : new IScalarConversionPolicy[]
+                {
+                    new SimpleScalarConversionPolicy(BuiltInScalarTypes.Concat(additionalScalarTypes)),
+                    new NullableScalarConversionPolicy(),
+                    new EnumScalarConversionPolicy(),
+                    new ByteArrayScalarConversionPolicy(),
+                };
+        }
+        
+        public PropertyValueConverter(
+            int maximumDestructuringDepth,
+            IEnumerable<IDestructuringPolicy> additionalDestructuringPolicies,
+            IEnumerable<IScalarConversionPolicy> scalarConversionPolicies)
+        {
             if (additionalDestructuringPolicies == null) throw new ArgumentNullException(nameof(additionalDestructuringPolicies));
             if (maximumDestructuringDepth < 0) throw new ArgumentOutOfRangeException(nameof(maximumDestructuringDepth));
 
             _maximumDestructuringDepth = maximumDestructuringDepth;
 
-            _scalarConversionPolicies = new IScalarConversionPolicy[]
-            {
-                new SimpleScalarConversionPolicy(BuiltInScalarTypes.Concat(additionalScalarTypes)),
-                new NullableScalarConversionPolicy(),
-                new EnumScalarConversionPolicy(),
-                new ByteArrayScalarConversionPolicy(),
-                new ReflectionTypesScalarConversionPolicy()
-            };
-
+            _scalarConversionPolicies = scalarConversionPolicies.ToArray();
             _destructuringPolicies = additionalDestructuringPolicies
-                .Concat(new []
+                .Concat(new[]
                 {
                     new DelegateDestructuringPolicy()
                 })
                 .ToArray();
+        }
+
+        public PropertyValueConverter(int maximumDestructuringDepth, IEnumerable<Type> additionalScalarTypes, IEnumerable<IDestructuringPolicy> additionalDestructuringPolicies)
+            : this(maximumDestructuringDepth, additionalDestructuringPolicies, GetDefaultScalarConversionPolicies(additionalScalarTypes))
+        {
         }
 
         public LogEventProperty CreateProperty(string name, object value, bool destructureObjects = false)

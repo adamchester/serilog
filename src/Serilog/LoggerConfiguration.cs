@@ -36,6 +36,7 @@ namespace Serilog
 
         LogEventLevel _minimumLevel = LogEventLevel.Information;
         LoggingLevelSwitch _levelSwitch;
+        bool _treatReflectionTypesAsScalars = true;
         int _maximumDestructuringDepth = 10;
         bool _loggerCreated;
 
@@ -107,6 +108,7 @@ namespace Serilog
             {
                 return new LoggerDestructuringConfiguration(
                     this,
+                    treatAsScalars => _treatReflectionTypesAsScalars = treatAsScalars,
                     _additionalScalarTypes.Add,
                     _additionalDestructuringPolicies.Add,
                     depth => _maximumDestructuringDepth = depth);
@@ -148,7 +150,10 @@ namespace Serilog
             if (_filters.Any())
                 sink = new SafeAggregateSink(new[] { new FilteringSink(sink, _filters) });
 
-            var converter = new PropertyValueConverter(_maximumDestructuringDepth, _additionalScalarTypes, _additionalDestructuringPolicies);
+            var converter = new PropertyValueConverter(
+                _maximumDestructuringDepth, _additionalDestructuringPolicies,
+                PropertyValueConverter.GetDefaultScalarConversionPolicies(_additionalScalarTypes, _treatReflectionTypesAsScalars));
+
             var processor = new MessageTemplateProcessor(converter);
 
             return _levelSwitch == null ?

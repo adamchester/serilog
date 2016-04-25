@@ -2,6 +2,7 @@
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Xunit;
 using Serilog.Core;
 using Serilog.Core.Filters;
@@ -89,7 +90,82 @@ namespace Serilog.Tests
             public int B { get; set; }
         }
 
-// ReSharper restore UnusedAutoPropertyAccessor.Local, UnusedMember.Local
+        // ReSharper restore UnusedAutoPropertyAccessor.Local, UnusedMember.Local
+
+        [Fact]
+        public void ReflectionTypesAreTreatedAsScalarByDefault()
+        {
+            var events = new List<LogEvent>();
+            var sink = new DelegatingSink(events.Add);
+
+            var logger = new LoggerConfiguration()
+                .WriteTo.Sink(sink)
+                .CreateLogger();
+
+            logger.Information("{@type}", this.GetType());
+            logger.Information("{@method}", this.GetType().GetMethod(nameof(ReflectionTypesAreTreatedAsScalarByDefault)));
+
+            var typeEvent = events.First();
+            var typeProp = typeEvent.Properties["type"];
+            Assert.IsType<ScalarValue>(typeProp);
+
+            var methodEvent = events.Skip(1).First();
+            var methodProp = methodEvent.Properties["method"];
+            Assert.IsType<ScalarValue>(methodProp);
+        }
+
+        [Fact]
+        public void ReflectionTypesAreNotTreatedAsScalarWhenSpecified()
+        {
+            var events = new List<LogEvent>();
+            var sink = new DelegatingSink(events.Add);
+
+            Func<MethodInfo, object> transformMethodInfo = mi => new
+            {
+                DeclaringTypeAqn = mi.DeclaringType.AssemblyQualifiedName,
+                AsString = mi.ToString()
+            };
+            Func<Type, object> transformType = t => new { t.AssemblyQualifiedName };
+            var theTypeBeingTested = this.GetType();
+            var theMethodBeingTested = this.GetType().GetMethod(nameof(ReflectionTypesAreNotTreatedAsScalarWhenSpecified));
+            
+            var logger = new LoggerConfiguration()
+                .Destructure.WithoutTreatingReflectionTypesAsScalars()
+                .Destructure.ByTransformingAssignableFrom(transformType)
+                .Destructure.ByTransformingAssignableFrom(transformMethodInfo)
+                .WriteTo.Sink(sink)
+                .CreateLogger();
+
+            logger.Information("{@type}", theTypeBeingTested);
+            logger.Information("{@method}", theMethodBeingTested);
+
+            var typeEvent = events.First();
+            var typeProp = typeEvent.Properties["type"];
+            
+            var typePropStructureValue = Assert.IsType<StructureValue>(typeProp);
+            Assert.Null(typePropStructureValue.TypeTag);
+            Assert.Single(typePropStructureValue.Properties,
+                lep => lep.Name == "AssemblyQualifiedName"
+                        && (string)lep.Value.LiteralValue() == theTypeBeingTested.AssemblyQualifiedName);
+            
+            var methodEvent = events.Skip(1).First();
+            var methodProp = methodEvent.Properties["method"];
+
+            var methodPropStructureValue = Assert.IsType<StructureValue>(methodProp);
+            Assert.Null(methodPropStructureValue.TypeTag); // anon object
+
+            var expected = new[] {
+                new { Name = "DeclaringTypeAqn", LiteralValue = theMethodBeingTested.DeclaringType.AssemblyQualifiedName },
+                new { Name = "AsString", LiteralValue = theMethodBeingTested.ToString() }
+            };
+            var actual = methodPropStructureValue
+                .Properties
+                .Select(lep => new { lep.Name, LiteralValue = (string)lep.Value.LiteralValue() });
+            
+            Assert.Equal(expected, actual);
+
+            //Assert.Equal(expected: transformMethodInfo(theMethodBeingTested), actual: methodPropScalar.Value);
+        }
 
         [Fact]
         public void SpecifyingThatATypeIsScalarCausesItToBeLoggedAsScalarEvenWhenDestructuring()
